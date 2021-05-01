@@ -1,0 +1,268 @@
+---
+title: "indiv_assignment_biostat"
+author: "Debora Lehmann"
+date: "1 5 2021"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Topic: discrete data/contingency table analysis
+
+paper:
+ T. Covassin, C.B. Swanik, M.L. Sachs (2003). "Sex Differences and the Incidence of Concussions Among Collegiate Athletes", Journal of Athletic Training, Vol. (38)3, pp238-244
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC233178/
+
+explanation of data set:
+http://users.stat.ufl.edu/~winner/data/concussion.txt
+
+data set:
+http://users.stat.ufl.edu/~winner/data/concussion.dat
+
+
+```{r import data}
+library(vcd)
+library(vcdExtra)
+library(gmodels)
+
+
+# data = original data in a data.frame
+data <- read.csv("http://users.stat.ufl.edu/~winner/data/concussion.dat", head = FALSE, sep = "")
+colnames(data) <- c("gender", "sport", "year", "concussion", "count")
+
+# data.t = data in an array
+data.t <- array(data$count, dim = c(2,3,5,2), dimnames = list(c("0", "1"),  c("97", "98", "99"), c("Sc","Lac", "Bsk", "SB", "Gym"), c("female", "male")))
+
+names(attributes(data.t)$dimnames) <- c("concussion","year", "sport", "gender")
+
+ftable(data.t)
+```
+
+```{r data preparation}
+
+# data table summed over years
+data.y <- aperm(data.t, c(1,3,4,2))
+data.y <- rowSums(data.y, dims = 3)
+
+ftable(data.y)
+
+# concussions per sport (summed over years and gender)
+data.yg <- rowSums(data.y, dims = 2)
+
+# each sport separately, sum over years
+data.sc <- data.y[,1,]
+data.lac <- data.y[,2,]
+data.bsk <- data.y[,3,]
+data.sb <- data.y[,4,]
+data.gym <- data.y[,5,]
+
+```
+
+```{r percentages}
+
+data.sport <- colSums(data.yg) # = total students per sport
+data.sport.g <- aperm(data.y, c(3,2,1))
+data.sport.g <- rowSums(data.sport.g, dim = 2) # total females / males per sport
+
+data.yg[2,] # nbr of concussions per sport over all years
+data.sport  # total of students participating in each sport
+data.sport.perc <- 100*data.yg[2,]/data.sport # percentage of students having concussion in each sport
+data.sport.perc
+# -> highest in soccer and lacrosse. Result consistent with source :)
+
+# is there a difference between genders?
+data.sport.g[1,] # total females per sport
+data.y[2,,1] # concussions in females per sport
+data.perc.f <- 100*data.y[2,,1]/data.sport.g[1,]
+
+data.sport.g[2,] # total males per sport
+data.y[2,,2] # concussions in males per sport
+data.perc.m <- 100*data.y[2,,2]/data.sport.g[2,]
+
+data.perc.f
+data.perc.m
+# -> percentage of concussion is higher for females in soccer (0.21 > 0.13) and bsk (0.07 > 0.05).
+
+
+# percentage of all concussions per sport
+prop.table(data.sport.perc)*100
+# -> highest risk for concussion in Sc then Lac then Bsk
+```
+
+```{r mosaic plots}
+mosaic(structable(data.y[1,,]), main = "without concussion")
+mosaic(structable(data.y[2,,]), main = "with concussion")
+```
+
+```{r function calcRelativeRisk}
+# Avril Coghlan: Using R for Biomedical Statistics. (Accessed 01.05.2021) https://a-little-book-of-r-for-biomedical-statistics.readthedocs.io/en/latest/src/biomedicalstats.html
+
+calcRelativeRisk <- function(mymatrix,alpha=0.05,referencerow=2)
+  {
+     numrow <- nrow(mymatrix)
+     myrownames <- rownames(mymatrix)
+     for (i in 1:numrow)
+     {
+        rowname <- myrownames[i]
+        DiseaseUnexposed <- mymatrix[referencerow,1]
+        ControlUnexposed <- mymatrix[referencerow,2]
+        if (i != referencerow)
+        {
+           DiseaseExposed <- mymatrix[i,1]
+           ControlExposed <- mymatrix[i,2]
+           totExposed <- DiseaseExposed + ControlExposed
+           totUnexposed <- DiseaseUnexposed + ControlUnexposed
+           probDiseaseGivenExposed <- DiseaseExposed/totExposed
+           probDiseaseGivenUnexposed <- DiseaseUnexposed/totUnexposed
+
+           # calculate the relative risk
+           relativeRisk <- probDiseaseGivenExposed/probDiseaseGivenUnexposed
+           print(paste("category =", rowname, ", relative risk = ",relativeRisk))
+
+           # calculate a confidence interval
+           confidenceLevel <- (1 - alpha)*100
+           sigma <- sqrt((1/DiseaseExposed) - (1/totExposed) +
+                         (1/DiseaseUnexposed) - (1/totUnexposed))
+           # sigma is the standard error of estimate of log of relative risk
+           z <- qnorm(1-(alpha/2))
+           lowervalue <- relativeRisk * exp(-z * sigma)
+           uppervalue <- relativeRisk * exp( z * sigma)
+           print(paste("category =", rowname, ", ", confidenceLevel,
+              "% confidence interval = [",lowervalue,",",uppervalue,"]"))
+        }
+     }
+}
+```
+
+```{r rel risk and chisq, diff between genders}
+# is there link between being female and having concussion in different sports?
+
+data.sc2 <- t(data.sc[c(2,1),])
+calcRelativeRisk(data.sc2)
+data.lac2 <- t(data.lac[c(2,1),])
+calcRelativeRisk(t(data.lac2))
+data.bsk2 <- t(data.bsk[c(2,1),])
+calcRelativeRisk(t(data.bsk2))
+data.sb2 <- t(data.sb[c(2,1),])
+calcRelativeRisk(t(data.sb2))
+data.gym2 <- t(data.gym[c(2,1),])
+calcRelativeRisk(t(data.gym2))
+
+# -> higher risk for women in soccer (1.57) and bsk (1.21) than for men, difference smaller in other three sports. Result consistent with source
+
+chisq.test(data.sc2) 
+chisq.test(data.lac2)
+chisq.test(data.bsk2)
+chisq.test(data.sb2)
+chisq.test(data.gym2) # not enough data available
+```
+
+```{r chisq, diff between sports, all}
+# for men and women
+
+data.yg2 <- t(data.yg[c(2,1),])
+
+dat.ScLac <- rbind(data.yg2[1,], data.yg2[2,]) # Sc vs. Lac
+chisq.test(dat.ScLac)
+
+dat.ScBsk <- rbind(data.yg2[1,], data.yg2[3,]) # Sc vs. Bsk
+chisq.test(dat.ScBsk)
+
+dat.ScSB <- rbind(data.yg2[1,], data.yg2[4,]) # Sc vs. SB
+chisq.test(dat.ScSB )
+
+dat.ScGym <- rbind(data.yg2[1,], data.yg2[5,]) # Sc vs. Gym
+chisq.test(dat.ScGym)
+
+dat.LacBsk <- rbind(data.yg2[2,], data.yg2[3,]) # Lac vs. Bsk
+chisq.test(dat.LacBsk)
+
+dat.LacSB <- rbind(data.yg2[2,], data.yg2[4,]) # Lac vs. SB
+chisq.test(dat.LacSB)
+
+dat.LacGym <- rbind(data.yg2[2,], data.yg2[5,]) # Lac vs. Gym
+chisq.test(dat.LacGym)
+
+dat.BskSB <- rbind(data.yg2[3,], data.yg2[4,]) # Bsk vs. SB
+chisq.test(dat.BskSB)
+
+dat.BskGym <- rbind(data.yg2[3,], data.yg2[5,]) # Bsk vs. Gym
+chisq.test(dat.BskGym)
+
+dat.SBGym <- rbind(data.yg2[4,], data.yg2[5,]) # SB vs. Gym
+chisq.test(dat.SBGym, simulate.p.value = TRUE) # simulate p-value since very few data point. Mention this in report.
+
+# not sign: Sc Lac, Bsk Gym, SB Gym
+# sign at 0.001: all others
+```
+
+```{r chisq, diff between sports, men}
+
+data.yg2 <- data.y[,,2]    # men only, exclude Gym since no conc observed
+data.yg2 <- t(data.yg2[c(2,1),])
+
+dat.ScLac <- rbind(data.yg2[1,], data.yg2[2,]) # Sc vs. Lac
+chisq.test(dat.ScLac)
+
+dat.ScBsk <- rbind(data.yg2[1,], data.yg2[3,]) # Sc vs. Bsk
+chisq.test(dat.ScBsk)
+
+dat.ScSB <- rbind(data.yg2[1,], data.yg2[4,]) # Sc vs. SB
+chisq.test(dat.ScSB )
+
+dat.LacBsk <- rbind(data.yg2[2,], data.yg2[3,]) # Lac vs. Bsk
+chisq.test(dat.LacBsk)
+
+dat.LacSB <- rbind(data.yg2[2,], data.yg2[4,]) # Lac vs. SB
+chisq.test(dat.LacSB)
+
+dat.BskSB <- rbind(data.yg2[3,], data.yg2[4,]) # Bsk vs. SB
+chisq.test(dat.BskSB)
+
+# not sign: Sc Lac, Bsk SB
+# sign at 0.001: all others
+```
+
+```{r chisq, diff between sports, women}
+
+data.yg2 <- data.y[,,1]  # women only
+data.yg2 <- t(data.yg2[c(2,1),])
+
+dat.ScLac <- rbind(data.yg2[1,], data.yg2[2,]) # Sc vs. Lac
+chisq.test(dat.ScLac)
+
+dat.ScBsk <- rbind(data.yg2[1,], data.yg2[3,]) # Sc vs. Bsk
+chisq.test(dat.ScBsk)
+
+dat.ScSB <- rbind(data.yg2[1,], data.yg2[4,]) # Sc vs. SB
+chisq.test(dat.ScSB )
+
+dat.ScGym <- rbind(data.yg2[1,], data.yg2[5,]) # Sc vs. Gym
+chisq.test(dat.ScGym)
+
+dat.LacBsk <- rbind(data.yg2[2,], data.yg2[3,]) # Lac vs. Bsk
+chisq.test(dat.LacBsk)
+
+dat.LacSB <- rbind(data.yg2[2,], data.yg2[4,]) # Lac vs. SB
+chisq.test(dat.LacSB)
+
+dat.LacGym <- rbind(data.yg2[2,], data.yg2[5,]) # Lac vs. Gym
+chisq.test(dat.LacGym)
+
+dat.BskSB <- rbind(data.yg2[3,], data.yg2[2,]) # Bsk vs. SB
+chisq.test(dat.BskSB)
+
+dat.BskGym <- rbind(data.yg2[3,], data.yg2[5,]) # Bsk vs. Gym
+chisq.test(dat.BskGym)
+
+dat.SBGym <- rbind(data.yg2[4,], data.yg2[5,]) # SB vs. Gym
+chisq.test(dat.SBGym, simulate.p.value = TRUE) # simulate p-value since very few data point.
+
+# not sign: Lac Bsk, Bsk SB, Bsk Gym, SB Gym
+# sign at 0.001: all others
+```
+
+
